@@ -98,6 +98,10 @@ function createWindow(preload: string, show = false): BrowserWindow {
     minWidth: 880,
     minHeight: 600,
     show,
+    // Keep the Windows/Linux menu bar out of the layout; Alt reveals it so
+    // the Plugins and update entries stay reachable. macOS ignores this in
+    // favor of its global menu bar.
+    autoHideMenuBar: true,
     webPreferences: {
       preload,
       nodeIntegration: false,
