@@ -37,7 +37,7 @@ async function fixture(
   await writeFile(join(repositoryRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
   await writeFile(join(appRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
 
-  const [os, arch] = target.split('-') as ['mac' | 'win', 'arm64' | 'x64']
+  const [os, arch] = target.split('-') as ['mac' | 'win' | 'linux', 'arm64' | 'x64']
   const base = desktopArtifactBaseName(arch)
   const origin = environment === 'test'
     ? TEST_ORIGIN
@@ -58,6 +58,21 @@ async function fixture(
     await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'darwin')), `${JSON.stringify({
       version,
       files: [{ url: `${base}.zip`, size: Buffer.byteLength(zip), sha512: digest(zip) }],
+    })}\n`)
+  }
+  else if (os === 'linux') {
+    // AppImage embeds its block map inside the image; only the metadata
+    // blockMapSize field records it, like the Windows lane.
+    const image = 'AppImage fixture bytes'
+    await writeFile(join(artifactsRoot, `${base}.AppImage`), image)
+    await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'linux')), `${JSON.stringify({
+      version,
+      files: [{
+        url: `${base}.AppImage`,
+        size: Buffer.byteLength(image),
+        sha512: digest(image),
+        blockMapSize: 128,
+      }],
     })}\n`)
   }
   else {
@@ -141,6 +156,40 @@ describe('desktop upload plan', () => {
       publicUrl: 'https://download.deepseek.com/_/harness/desktop/stable/win-x64/',
       bucket: PRODUCTION_BUCKET,
     })
+  })
+
+  it('validates the Linux AppImage with its embedded blockmap and per-architecture feed', async () => {
+    const paths = await fixture('linux-x64')
+    const plan = await createDesktopUploadPlan('linux-x64', paths)
+    expect(plan.artifacts.map(artifact => artifact.filename)).toEqual([
+      'DeepSeek.Harness-x64.AppImage',
+      'latest-linux.yml',
+    ])
+    expect(plan).toMatchObject({
+      publicUrl: 'https://desktop-updates.example.com/_/harness/desktop/stable/linux-x64/',
+    })
+    expect(plan.artifacts.at(-1)).toMatchObject({ channelMetadata: true })
+
+    const armPaths = await fixture('linux-arm64', '1.2.3-rc.2')
+    const armPlan = await createDesktopUploadPlan('linux-arm64', armPaths)
+    expect(armPlan.artifacts.map(artifact => artifact.filename)).toEqual([
+      'DeepSeek.Harness-arm64.AppImage',
+      'rc-linux.yml',
+    ])
+  })
+
+  it('rejects Linux metadata without an embedded blockmap size', async () => {
+    const paths = await fixture('linux-x64')
+    const image = 'AppImage fixture bytes'
+    await writeFile(join(paths.artifactsRoot, 'latest-linux.yml'), `${JSON.stringify({
+      version: '1.2.3',
+      files: [{
+        url: 'DeepSeek.Harness-x64.AppImage',
+        size: Buffer.byteLength(image),
+        sha512: digest(image),
+      }],
+    })}\n`)
+    await expect(createDesktopUploadPlan('linux-x64', paths)).rejects.toThrow(/blockMapSize/u)
   })
 
   it('rejects Windows metadata without an embedded blockmap size', async () => {

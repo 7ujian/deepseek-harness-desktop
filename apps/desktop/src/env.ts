@@ -56,11 +56,16 @@ function port(): string {
   return process.env[PORT_ENV] ?? '0'
 }
 
-/** Platform log directory; only macOS and Windows are shipped. */
+/** Platform log directory for every shipped platform. */
 function defaultLogDir(): string {
   if (process.platform === 'win32') {
     const roaming = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
     return join(roaming, 'dsh-desktop', 'logs')
+  }
+  if (process.platform === 'linux') {
+    const configured = process.env.XDG_STATE_HOME
+    const stateHome = configured !== undefined && configured !== '' ? configured : join(homedir(), '.local', 'state')
+    return join(stateHome, 'dsh-desktop', 'logs')
   }
   return join(homedir(), 'Library', 'Logs', 'dsh-desktop')
 }
@@ -68,12 +73,12 @@ function defaultLogDir(): string {
 /**
  * The bundled Node binary for this host, or `null` when the runtime bundle is
  * absent (development). The prepare-runtime script stages each target at
- * `runtime/<platform>-<arch>/`; macOS keeps `node` under `bin/`, Windows keeps
- * `node.exe` at the root.
+ * `runtime/<platform>-<arch>/`; macOS and Linux keep `node` under `bin/`,
+ * Windows keeps `node.exe` at the root.
  */
 function bundledNode(resourceRoot: string): string | null {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-  const platform = process.platform === 'darwin' ? 'darwin' : 'win32'
+  const platform = process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'win32'
   const dir = join(resourceRoot, 'runtime', `${platform}-${arch}`)
   const bin = process.platform === 'win32' ? join(dir, 'node.exe') : join(dir, 'bin', 'node')
   return existsSync(bin) ? bin : null

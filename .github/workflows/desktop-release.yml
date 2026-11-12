@@ -1,12 +1,14 @@
-# Build and publish the Electron desktop app installers: a macOS arm64 .dmg and
-# a Windows x64 NSIS installer. A manual dispatch builds the installers without
+# Build and publish the Electron desktop app installers: a macOS arm64 .dmg, a
+# Windows x64 NSIS installer, and Linux x64/arm64 AppImages. A manual dispatch
+# builds the installers without
 # running the repository's
 # other release and CI workflows. Run it from a dsh-v* tag with publish=true to
 # create a GitHub Release with the installers.
 #
 # The macOS job signs with the Developer ID Application identity and notarizes
 # via notarytool (credentials come from repository secrets); the Windows job
-# stays unsigned until an Authenticode certificate is added. The installers use
+# stays unsigned until an Authenticode certificate is added; the Linux AppImages
+# are unsigned (AppImage has no signature requirement). The installers use
 # fixed, version-free filenames so the READMEs' releases/latest/download links
 # stay stable across releases; the tag and both package manifests still carry
 # the release version. electron-builder's `publish` config (with
@@ -159,9 +161,69 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-linux:
+    name: Linux (${{ matrix.arch }} AppImage)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm run build
+
+      # The fixed target command stages the self-contained runtime and builds
+      # the host-arch AppImage. Packaging runs the bundled Node runtime, so
+      # each architecture is built on its own runner.
+      - name: Package Linux
+        env:
+          DSH_DESKTOP_APP_ID: com.deepseek.dsh-desktop
+          DSH_DESKTOP_AUTO_UPDATE_ENV: production
+        run: pnpm run package:desktop:linux:${{ matrix.arch }}
+
+      # Both architectures emit <channel>-linux.yml; tag each with its
+      # architecture so the merged release artifacts stay distinct.
+      - name: Tag channel metadata per architecture
+        run: |
+          cd "apps/desktop/.desktop-build/targets/linux-${{ matrix.arch }}/artifacts"
+          for metadata in *-linux.yml; do
+            mv "$metadata" "${metadata%-linux.yml}-linux-${{ matrix.arch }}.yml"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-${{ matrix.arch }}
+          path: |
+            apps/desktop/.desktop-build/targets/linux-${{ matrix.arch }}/artifacts/DeepSeek.Harness-*.AppImage
+            apps/desktop/.desktop-build/targets/linux-${{ matrix.arch }}/artifacts/*-linux-*.yml
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Create GitHub Release
-    needs: [build-macos, build-windows]
+    needs: [build-macos, build-windows, build-linux]
     if: inputs.publish
     runs-on: ubuntu-latest
     permissions:
@@ -198,7 +260,11 @@ jobs:
             "dist/DeepSeek.Harness-arm64.zip.blockmap"
             "dist/DeepSeek.Harness-x64.exe"
             "dist/DeepSeek.Harness-x64.exe.blockmap"
+            "dist/DeepSeek.Harness-x64.AppImage"
+            "dist/DeepSeek.Harness-arm64.AppImage"
             "dist/${channel}-mac.yml"
+            "dist/${channel}-linux-x64.yml"
+            "dist/${channel}-linux-arm64.yml"
           )
           if [ -f "dist/${channel}.yml" ]; then
             assets+=("dist/${channel}.yml")

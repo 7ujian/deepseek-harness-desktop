@@ -14,6 +14,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-171513.svg" /></a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-171513.svg" />
   <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
+  <img alt="Linux" src="https://img.shields.io/badge/Linux-x64%20%7C%20arm64-171513.svg" />
 </p>
 
 <p align="center">
@@ -22,7 +23,7 @@
 
 这个壳是一层薄封装：它拉起 `dsh web`，等待就绪行，在所提供的 loopback 源处打开一个 `BrowserWindow`，并负责关停与崩溃重启。渲染层是加载该源的 Chromium，因此 `window.__DSH_BOOT__` 注入与 `/api` 传输和 `dsh web` 下完全一致。没有重新实现任何 UI。
 
-> [!NOTE] DeepSeek Harness 目前处于开发者预览阶段，会有破坏兼容性的变更，本壳也随之跟进。macOS 安装包已签名并公证；Windows 安装包尚未签名，因此 Windows SmartScreen 首次打开时会提示。
+> [!NOTE] DeepSeek Harness 目前处于开发者预览阶段，会有破坏兼容性的变更，本壳也随之跟进。macOS 安装包已签名并公证；Windows 安装包尚未签名，因此 Windows SmartScreen 首次打开时会提示；Linux 提供可移植的 AppImage。
 
 ## 下载
 
@@ -30,12 +31,14 @@
 
 | 平台 | 安装包 | 下载 |
 | --- | --- | --- |
-| macOS Apple Silicon | DMG 安装包（arm64） | [DeepSeek.Harness-arm64.dmg](https://github.com/salathleizhang/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-arm64.dmg) |
-| Windows x64 | NSIS 安装包 | [DeepSeek.Harness-x64.exe](https://github.com/salathleizhang/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-x64.exe) |
+| macOS Apple Silicon | DMG 安装包（arm64） | [DeepSeek.Harness-arm64.dmg](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-arm64.dmg) |
+| Windows x64 | NSIS 安装包 | [DeepSeek.Harness-x64.exe](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-x64.exe) |
+| Linux x64 | AppImage | [DeepSeek.Harness-x64.AppImage](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-x64.AppImage) |
+| Linux arm64 | AppImage | [DeepSeek.Harness-arm64.AppImage](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-arm64.AppImage) |
 
-完整版本历史见 [Releases](https://github.com/salathleizhang/deepseek-harness-desktop/releases) 页。
+完整版本历史见 [Releases](https://github.com/7ujian/deepseek-harness-desktop/releases) 页。
 
-macOS Intel（x64）要等 harness 的原生依赖完成 x64 构建后再补上；不支持 Windows ARM64。
+Linux AppImage 运行需要 FUSE 2（例如 Debian/Ubuntu 上的 `libfuse2`），也可以用 `--appimage-extract-and-run` 启动。macOS Intel（x64）要等 harness 的原生依赖完成 x64 构建后再补上；不支持 Windows ARM64。
 
 ## 为什么存在这个项目
 
@@ -85,12 +88,14 @@ pnpm --filter @deepseek-ai/dsh-desktop dev
 ### 打包
 
 ```sh
-pnpm run build                                  # repo-wide; builds the CLI and frontend
-pnpm --filter @deepseek-ai/dsh-desktop dist:mac # macOS .dmg
-pnpm --filter @deepseek-ai/dsh-desktop dist:win # Windows x64 NSIS installer
+pnpm run build                                        # repo-wide; builds the CLI and frontend
+pnpm run package:desktop:mac:arm64                    # macOS arm64 .dmg
+pnpm run package:desktop:win:x64:unsigned             # Windows x64 NSIS installer
+pnpm run package:desktop:linux:x64                    # Linux x64 AppImage
+pnpm run package:desktop:linux:arm64                  # Linux arm64 AppImage
 ```
 
-`dist` 构建这个壳、暂存自包含运行时，并针对当前平台打包；`dist:mac` 与 `dist:win` 固定目标平台。由于 harness 带架构相关的原生模块，需在各自的系统上构建安装包：`dist:mac` 在 macOS 上，`dist:win` 在 Windows 上。
+每条 `package:desktop:*` 命令都会构建这个壳、暂存自包含运行时，并打包固定目标。由于 harness 带架构相关的原生模块，且打包过程会执行捆绑的 Node 运行时，需在各自系统与架构上构建安装包：`…:mac:*` 在 macOS 上，`…:win:x64` 在 Windows x64 上，`…:linux:x64` 在 Linux x64 上，`…:linux:arm64` 在 Linux arm64 上。
 
 ## 运行时架构
 
@@ -117,12 +122,13 @@ electron-builder 通过 `extraResources` 把两者复制进 `resources/`。启�
 
 ## 发布
 
-一个由 tag 触发的 workflow（[desktop-release.yml](.github/workflows/desktop-release.yml)）负责构建并发布安装包。推送 `dsh-v*` tag——桌面应用与 dsh 族共享版本与 tag——就会构建 macOS arm64 的 `.dmg` 与 Windows x64 的 NSIS 安装包，并把两者作为附件挂到标题为 `DeepSeek Harness Desktop <version>` 的 GitHub Release 上。以 `publish: false` 手动触发可只排练构建而不创建 Release。
+一个由 tag 触发的 workflow（[desktop-release.yml](.github/workflows/desktop-release.yml)）负责构建并发布安装包。推送 `dsh-v*` tag——桌面应用与 dsh 族共享版本与 tag——就会构建 macOS arm64 的 `.dmg`、Windows x64 的 NSIS 安装包以及 Linux x64/arm64 的 AppImage，并把它们作为附件挂到标题为 `DeepSeek Harness Desktop <version>` 的 GitHub Release 上。以 `publish: false` 手动触发可只排练构建而不创建 Release。
 
 - macOS：使用 Developer ID Application 身份签名并已公证。
 - Windows：在加入 Authenticode 证书之前仍为未签名。
+- Linux：未签名的可移植 AppImage，各架构在匹配的 runner 上构建。
 - macOS x64：要等 harness 的原生依赖完成 x64 构建后再补上。
-- 自动更新：`electron-builder.yml` 的 `publish` 配置会在 `--publish never` 下写出 `latest-mac.yml` / `latest.yml`，workflow 随安装包一并上传，供应用内 `electron-updater` 更新源使用。
+- 自动更新：`publish` 配置会在 `--publish never` 下写出 `latest-mac.yml` / `latest.yml` / `latest-linux.yml`，workflow 随安装包一并上传，供应用内 `electron-updater` 更新源使用。
 
 ## 环境变量
 

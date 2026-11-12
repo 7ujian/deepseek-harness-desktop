@@ -98,7 +98,8 @@ export function createElectronBuilderConfig(
     // before the artifact lanes copy it. Write the feed file here, where
     // electron-builder still signs the bundle afterwards.
     afterPack: async context => {
-      if (update === undefined || context.electronPlatformName !== 'darwin') return
+      if (update === undefined) return
+      if (context.electronPlatformName !== 'darwin' && context.electronPlatformName !== 'linux') return
       await writeDesktopAppUpdateConfig(context, update)
     },
     afterSign: async context => {
@@ -122,7 +123,19 @@ export function createElectronBuilderConfig(
       target: ['nsis'],
     },
     linux: {
+      icon: 'build/icon.png',
       category: 'Development',
+      maintainer: 'DeepSeek Harness Desktop contributors',
+      // The scoped package name cannot name an executable or a desktop entry;
+      // deepseek-harness becomes the binary, the .desktop file (via
+      // package.json desktopName + syncDesktopName), and the Chromium
+      // WM_CLASS, so taskbar pinning stays attached to running windows.
+      executableName: 'deepseek-harness',
+      syncDesktopName: true,
+      // AppImage expands ${arch} as x86_64/aarch64; pin the shared
+      // version-free DeepSeek.Harness-<arch> stem so the releases/latest
+      // download links and update metadata match macOS and Windows.
+      artifactName: `DeepSeek.Harness-${resolvedArch}.\${ext}`,
       target: ['AppImage'],
     },
     nsis: {

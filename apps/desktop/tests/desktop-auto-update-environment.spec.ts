@@ -77,16 +77,27 @@ describe('desktop auto-update environment', () => {
     expect(() => resolveDesktopAutoUpdateEnvironment({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'staging',
     })).toThrow(/test.*production/u)
-    expect(() => resolveDesktopAutoUpdateTarget('linux', 'x64')).toThrow(/unsupported target/u)
-    expect(() => desktopBuildRecordFilename('linux-x64' as 'mac-arm64')).toThrow(/unsupported target/u)
+    expect(() => resolveDesktopAutoUpdateTarget('linux', 'ppc64')).toThrow(/unsupported target/u)
+    expect(() => desktopBuildRecordFilename('haiku-x64' as 'mac-arm64')).toThrow(/unsupported target/u)
+  })
+
+  it('resolves Linux update directories per architecture', () => {
+    expect(resolveDesktopAutoUpdateTarget('linux', 'x64')).toBe('linux-x64')
+    expect(resolveDesktopAutoUpdateTarget('linux', 'arm64')).toBe('linux-arm64')
+    expect(desktopBuildRecordFilename('linux-x64')).toBe('linux-x64-release.json')
+    expect(resolveDesktopAutoUpdateConfig({
+      DOWNLOAD_TEST_ORIGIN: 'https://desktop-updates.example.com',
+    }, 'linux', 'x64').publicUrl).toBe('https://desktop-updates.example.com/_/harness/desktop/stable/linux-x64/')
   })
 
   it('matches electron-builder channel metadata names to the Desktop version', () => {
     expect(desktopUpdateMetadataFilename('1.2.3', 'darwin')).toBe('latest-mac.yml')
     expect(desktopUpdateMetadataFilename('1.2.3-alpha.4', 'darwin')).toBe('alpha-mac.yml')
     expect(desktopUpdateMetadataFilename('1.2.3-beta.2', 'win32')).toBe('beta.yml')
+    expect(desktopUpdateMetadataFilename('1.2.3', 'linux')).toBe('latest-linux.yml')
+    expect(desktopUpdateMetadataFilename('1.2.3-rc.1', 'linux')).toBe('rc-linux.yml')
     expect(() => desktopUpdateMetadataFilename('not-semver', 'darwin')).toThrow(/invalid Desktop version/u)
-    expect(() => desktopUpdateMetadataFilename('1.2.3', 'linux')).toThrow(/unsupported metadata platform/u)
+    expect(() => desktopUpdateMetadataFilename('1.2.3', 'freebsd')).toThrow(/unsupported metadata platform/u)
   })
 
   it('keeps the artifact base name free of the release version', () => {

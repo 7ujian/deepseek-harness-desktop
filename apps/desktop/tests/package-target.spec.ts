@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   desktopElectronBuilderArguments,
   desktopElectronBuilderEnvironment,
+  desktopPnpmInvocation,
   parseDesktopPackageInvocation,
   resolveDesktopPackageTarget,
   withoutDesktopUploadCredentials,
@@ -19,6 +20,12 @@ describe('desktop package target', () => {
     expect(resolveDesktopPackageTarget('win-x64', 'win32', 'x64')).toMatchObject({
       platform: 'win32', arch: 'x64', builderPlatform: '--win', builderArch: '--x64',
     })
+    expect(resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toMatchObject({
+      platform: 'linux', arch: 'x64', builderPlatform: '--linux', builderArch: '--x64',
+    })
+    expect(resolveDesktopPackageTarget('linux-arm64', 'linux', 'arm64')).toMatchObject({
+      platform: 'linux', arch: 'arm64', builderPlatform: '--linux', builderArch: '--arm64',
+    })
   })
 
   it('allows an Apple Silicon host to build the Intel target through Rosetta', () => {
@@ -26,11 +33,21 @@ describe('desktop package target', () => {
   })
 
   it('rejects unsupported targets and hosts before building', () => {
-    expect(() => resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toThrow(/unsupported target/u)
+    expect(() => resolveDesktopPackageTarget('linux-x64', 'linux', 'arm64')).toThrow(/Linux x64/u)
+    expect(() => resolveDesktopPackageTarget('linux-arm64', 'darwin', 'arm64')).toThrow(/Linux arm64/u)
     expect(() => resolveDesktopPackageTarget('win-x64', 'darwin', 'arm64')).toThrow(/Windows x64/u)
     expect(() => resolveDesktopPackageTarget('mac-arm64', 'darwin', 'x64')).toThrow(/Apple Silicon/u)
     expect(() => resolveDesktopPackageTarget('mac-arm64', 'linux', 'arm64')).toThrow(/macOS/u)
     expect(() => resolveDesktopPackageTarget('mac-x64', 'darwin', 'ppc64')).toThrow(/Rosetta/u)
+    expect(() => resolveDesktopPackageTarget('haiku-x64', 'linux', 'x64')).toThrow(/unsupported target/u)
+  })
+
+  it('defaults to the host target on every supported platform', () => {
+    expect(parseDesktopPackageInvocation([], 'darwin', 'arm64').target.name).toBe('mac-arm64')
+    expect(parseDesktopPackageInvocation([], 'win32', 'x64').target.name).toBe('win-x64')
+    expect(parseDesktopPackageInvocation([], 'linux', 'x64').target.name).toBe('linux-x64')
+    expect(parseDesktopPackageInvocation([], 'linux', 'arm64').target.name).toBe('linux-arm64')
+    expect(() => parseDesktopPackageInvocation([], 'linux', 'ppc64')).toThrow(/unsupported build host/u)
   })
 
   it('parses installer and unpacked-directory invocations', () => {
@@ -104,6 +121,25 @@ describe('desktop package target', () => {
       DSH_DESKTOP_WINDOWS_SIGNTOOL: 'C:\\tools\\signtool.exe',
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
     })).toEqual({ DSH_DESKTOP_AUTO_UPDATE_ENV: 'production' })
+  })
+
+  it('spawns JavaScript pnpm entries under Node and standalone binaries directly', () => {
+    expect(desktopPnpmInvocation(['run', 'build'], { npm_execpath: '/tools/pnpm.cjs' })).toEqual({
+      command: process.execPath,
+      args: ['/tools/pnpm.cjs', 'run', 'build'],
+    })
+    expect(desktopPnpmInvocation(['run', 'build'], { npm_execpath: '/tools/pnpm.mjs' })).toEqual({
+      command: process.execPath,
+      args: ['/tools/pnpm.mjs', 'run', 'build'],
+    })
+    expect(desktopPnpmInvocation(['run', 'build'], {
+      npm_execpath: '/home/user/.local/share/pnpm/store/v11/links/@pnpm/exe/11.7.0/node_modules/@pnpm/exe/pnpm',
+    })).toEqual({
+      command: '/home/user/.local/share/pnpm/store/v11/links/@pnpm/exe/11.7.0/node_modules/@pnpm/exe/pnpm',
+      args: ['run', 'build'],
+    })
+    expect(() => desktopPnpmInvocation(['run', 'build'], {}))
+      .toThrow(/through a pnpm package command/u)
   })
 
   it('keeps COS credentials out of every packaging subprocess', () => {

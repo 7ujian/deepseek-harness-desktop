@@ -14,6 +14,7 @@ English | [中文](README.zh.md)
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-171513.svg" /></a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-171513.svg" />
   <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
+  <img alt="Linux" src="https://img.shields.io/badge/Linux-x64%20%7C%20arm64-171513.svg" />
 </p>
 
 <p align="center">
@@ -22,7 +23,7 @@ English | [中文](README.zh.md)
 
 The shell is a thin layer: it spawns `dsh web`, waits for the readiness line, opens one `BrowserWindow` at the served loopback origin, and owns shutdown and crash-restart. The renderer is Chromium loading that origin, so `window.__DSH_BOOT__` injection and the `/api` transport behave exactly as under `dsh web`. No UI is reimplemented.
 
-> [!NOTE] DeepSeek Harness is in developer preview with compatibility-breaking changes, and the shell tracks it. macOS installers are signed and notarized; Windows installers are unsigned, so Windows SmartScreen warns on first open.
+> [!NOTE] DeepSeek Harness is in developer preview with compatibility-breaking changes, and the shell tracks it. macOS installers are signed and notarized; Windows installers are unsigned, so Windows SmartScreen warns on first open; Linux ships portable AppImages.
 
 ## Download
 
@@ -30,12 +31,14 @@ Installers use fixed filenames, so these one-click links always fetch the latest
 
 | Platform | Package | Download |
 | --- | --- | --- |
-| macOS Apple Silicon | DMG installer (arm64) | [DeepSeek.Harness-arm64.dmg](https://github.com/salathleizhang/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-arm64.dmg) |
-| Windows x64 | NSIS installer | [DeepSeek.Harness-x64.exe](https://github.com/salathleizhang/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-x64.exe) |
+| macOS Apple Silicon | DMG installer (arm64) | [DeepSeek.Harness-arm64.dmg](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-arm64.dmg) |
+| Windows x64 | NSIS installer | [DeepSeek.Harness-x64.exe](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-x64.exe) |
+| Linux x64 | AppImage | [DeepSeek.Harness-x64.AppImage](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-x64.AppImage) |
+| Linux arm64 | AppImage | [DeepSeek.Harness-arm64.AppImage](https://github.com/7ujian/deepseek-harness-desktop/releases/latest/download/DeepSeek.Harness-arm64.AppImage) |
 
-The [Releases](https://github.com/salathleizhang/deepseek-harness-desktop/releases) page keeps the full version history.
+The [Releases](https://github.com/7ujian/deepseek-harness-desktop/releases) page keeps the full version history.
 
-macOS Intel (x64) is deferred until the harness's native dependencies are built for x64; Windows ARM64 is not supported.
+Linux AppImages need FUSE 2 (for example `libfuse2` on Debian/Ubuntu) to run, or can be started with `--appimage-extract-and-run`. macOS Intel (x64) is deferred until the harness's native dependencies are built for x64; Windows ARM64 is not supported.
 
 ## Why this project exists
 
@@ -85,12 +88,14 @@ pnpm --filter @deepseek-ai/dsh-desktop dev
 ### Packaging
 
 ```sh
-pnpm run build                                  # repo-wide; builds the CLI and frontend
-pnpm --filter @deepseek-ai/dsh-desktop dist:mac # macOS .dmg
-pnpm --filter @deepseek-ai/dsh-desktop dist:win # Windows x64 NSIS installer
+pnpm run build                                        # repo-wide; builds the CLI and frontend
+pnpm run package:desktop:mac:arm64                    # macOS arm64 .dmg
+pnpm run package:desktop:win:x64:unsigned             # Windows x64 NSIS installer
+pnpm run package:desktop:linux:x64                    # Linux x64 AppImage
+pnpm run package:desktop:linux:arm64                  # Linux arm64 AppImage
 ```
 
-`dist` builds the shell, stages the self-contained runtime, and packages for the current platform; `dist:mac` and `dist:win` fix the target. Because the harness has architecture-specific native modules, build each installer on its own OS: `dist:mac` on macOS, `dist:win` on Windows.
+Each `package:desktop:*` command builds the shell, stages the self-contained runtime, and packages the fixed target. Because the harness has architecture-specific native modules and packaging executes the bundled Node runtime, build each installer on its own OS and architecture: `…:mac:*` on macOS, `…:win:x64` on Windows x64, `…:linux:x64` on Linux x64, `…:linux:arm64` on Linux arm64.
 
 ## Runtime architecture
 
@@ -117,12 +122,13 @@ electron-builder copies both into `resources/` via `extraResources`. At launch t
 
 ## Release
 
-A tag-triggered workflow ([desktop-release.yml](.github/workflows/desktop-release.yml)) builds and publishes the installers. Pushing a `dsh-v*` tag — the desktop app shares the dsh family's version and tag — builds a macOS arm64 `.dmg` and a Windows x64 NSIS installer and attaches both to a GitHub Release titled `DeepSeek Harness Desktop <version>`. A manual dispatch with `publish: false` rehearses the build without creating a release.
+A tag-triggered workflow ([desktop-release.yml](.github/workflows/desktop-release.yml)) builds and publishes the installers. Pushing a `dsh-v*` tag — the desktop app shares the dsh family's version and tag — builds a macOS arm64 `.dmg`, a Windows x64 NSIS installer, and Linux x64/arm64 AppImages, and attaches all of them to a GitHub Release titled `DeepSeek Harness Desktop <version>`. A manual dispatch with `publish: false` rehearses the build without creating a release.
 
 - macOS: signed with a Developer ID Application identity and notarized.
 - Windows: unsigned until an Authenticode certificate is added.
+- Linux: unsigned portable AppImages, built per architecture on matching runners.
 - macOS x64: deferred until the harness's native dependencies are built for x64.
-- Auto-update: the `publish` config in `electron-builder.yml` writes `latest-mac.yml` / `latest.yml` (under `--publish never`), which the workflow uploads alongside the installers to serve the in-app `electron-updater` feed.
+- Auto-update: the `publish` config writes `latest-mac.yml` / `latest.yml` / `latest-linux.yml` (under `--publish never`), which the workflow uploads alongside the installers to serve the in-app `electron-updater` feed.
 
 ## Environment
 

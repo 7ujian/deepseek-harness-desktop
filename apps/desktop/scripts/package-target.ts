@@ -28,14 +28,14 @@ const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
 ])
 
 /** Fixed platform and architecture identifiers exposed by package scripts. */
-export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64'
+export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64' | 'linux-x64' | 'linux-arm64'
 
 /** One supported release target and its electron-builder selectors. */
 export interface DesktopPackageTarget {
   readonly name: DesktopPackageTargetName
-  readonly platform: 'darwin' | 'win32'
+  readonly platform: 'darwin' | 'win32' | 'linux'
   readonly arch: 'arm64' | 'x64'
-  readonly builderPlatform: '--mac' | '--win'
+  readonly builderPlatform: '--mac' | '--win' | '--linux'
   readonly builderArch: '--arm64' | '--x64'
 }
 
@@ -61,6 +61,43 @@ const TARGETS: Record<DesktopPackageTargetName, DesktopPackageTarget> = {
     builderPlatform: '--win',
     builderArch: '--x64',
   },
+  'linux-x64': {
+    name: 'linux-x64',
+    platform: 'linux',
+    arch: 'x64',
+    builderPlatform: '--linux',
+    builderArch: '--x64',
+  },
+  'linux-arm64': {
+    name: 'linux-arm64',
+    platform: 'linux',
+    arch: 'arm64',
+    builderPlatform: '--linux',
+    builderArch: '--arm64',
+  },
+}
+
+/**
+ * Resolve the launching pnpm process for a shell-free child spawn.
+ *
+ * Standalone pnpm installs — pnpm's own installer on Linux and the setup
+ * actions' `@pnpm/exe` package — expose `npm_execpath` as a native executable
+ * that must be spawned directly; JavaScript entries keep running under the
+ * ambient Node. Mirrors the repository's `scripts/pnpm-invocation.ts`.
+ * @param args - Arguments to pass to pnpm.
+ * @param environment - Lifecycle environment containing `npm_execpath`.
+ * @returns A command and argument array suitable for `spawn` without a shell.
+ */
+export function desktopPnpmInvocation(
+  args: readonly string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  const entry = environment.npm_execpath
+  if (entry === undefined || entry === '') {
+    throw new Error('desktop package: invoke this script through a pnpm package command')
+  }
+  if (/\.[cm]?js$/iu.test(entry)) return { command: process.execPath, args: [entry, ...args] }
+  return { command: entry, args: [...args] }
 }
 
 /**
@@ -71,9 +108,7 @@ const TARGETS: Record<DesktopPackageTargetName, DesktopPackageTarget> = {
 export function withoutWindowsSigningEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(environment)
     .filter(([name]) => !name.startsWith(WINDOWS_SIGNING_ENV_PREFIX)))
-}
-
-/**
+}/**
  * Select signing and NSIS-compatible archive filters for electron-builder.
  * @param environment - Target packaging environment.
  * @param unsigned - Whether to create a local unsigned Windows artifact.
@@ -165,6 +200,12 @@ export function resolveDesktopPackageTarget(
   if (name === 'mac-x64' && hostArch !== 'arm64' && hostArch !== 'x64') {
     throw new Error('desktop package: mac-x64 requires an Intel Mac or Apple Silicon with Rosetta')
   }
+  // The bundled Node runtime is executed during preparation (lockfile install
+  // and the runtime smoke test), so a Linux target needs a Linux host of the
+  // same architecture.
+  if (target.platform === 'linux' && (hostPlatform !== 'linux' || hostArch !== target.arch)) {
+    throw new Error(`desktop package: ${name} requires a Linux ${target.arch} build host`)
+  }
   return target
 }
 
@@ -250,12 +291,9 @@ function runPnpm(
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = APP_ROOT,
 ): Promise<void> {
-  const pnpmEntry = process.env.npm_execpath
-  if (pnpmEntry === undefined || pnpmEntry === '') {
-    throw new Error('desktop package: invoke this script through a pnpm package command')
-  }
+  const invocation = desktopPnpmInvocation(args)
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [pnpmEntry, ...args], {
+    const child = spawn(invocation.command, invocation.args, {
       cwd,
       env,
       stdio: 'inherit',

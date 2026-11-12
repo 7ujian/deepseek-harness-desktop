@@ -20,6 +20,8 @@ const TARGETS = {
   'mac-arm64': { platform: 'darwin', arch: 'arm64', os: 'mac' },
   'mac-x64': { platform: 'darwin', arch: 'x64', os: 'mac' },
   'win-x64': { platform: 'win32', arch: 'x64', os: 'win' },
+  'linux-x64': { platform: 'linux', arch: 'x64', os: 'linux' },
+  'linux-arm64': { platform: 'linux', arch: 'arm64', os: 'linux' },
 } as const satisfies Record<DesktopPackageTargetName, {
   readonly platform: NodeJS.Platform
   readonly arch: string
@@ -220,7 +222,7 @@ export async function createDesktopUploadPlan(
   }
 
   const base = desktopArtifactBaseName(target.arch)
-  const updaterExtension = target.platform === 'darwin' ? 'zip' : 'exe'
+  const updaterExtension = target.platform === 'darwin' ? 'zip' : target.platform === 'linux' ? 'AppImage' : 'exe'
   const updaterInfo = updateFileInfo(metadata.files[0], `${metadataFilename}.files[0]`, `${base}.${updaterExtension}`)
   const updaterPath = await verifyChecksummedArtifact(artifactsRoot, updaterInfo)
   const artifacts: DesktopUploadArtifact[] = []
@@ -233,6 +235,18 @@ export async function createDesktopUploadPlan(
       uploadArtifact(updaterPath, update.keyPrefix, 'application/zip'),
       uploadArtifact(blockmapPath, update.keyPrefix, 'application/octet-stream'),
     )
+  }
+  else if (target.platform === 'linux') {
+    // AppImage differential updates read the block map embedded in the image
+    // (metadata blockMapSize), so — like the Windows lane — only the metadata
+    // field and the image itself are validated and uploaded.
+    const blockMapSize = object(metadata.files[0], `${metadataFilename}.files[0]`).blockMapSize
+    numberField(blockMapSize, `${metadataFilename}.files[0].blockMapSize`)
+    artifacts.push(uploadArtifact(
+      updaterPath,
+      update.keyPrefix,
+      'application/octet-stream',
+    ))
   }
   else {
     const blockMapSize = object(metadata.files[0], `${metadataFilename}.files[0]`).blockMapSize
