@@ -317,9 +317,18 @@ describe('desktop main startup', () => {
     await Promise.all([retry, secondRetry, harness.navigated.promise])
     expect(harness.applyRelease).toHaveBeenCalledTimes(1)
     expect(harness.assertProfileRuntime).toHaveBeenCalledWith('desktop-test-profile')
+    // Packaged Linux runs the host under the bundled plain Node (Electron's
+    // system GTK GLib cannot coexist with sharp's bundled one) and reads the
+    // dsh runtime from disk; other platforms keep Electron-as-Node and asar.
+    const productionNode = process.platform === 'linux'
+      ? join('desktop-test-resources', 'runtime', 'node', 'node')
+      : process.execPath
+    const productionRuntime = process.platform === 'linux'
+      ? join('desktop-test-resources', 'app.asar.unpacked', 'dsh')
+      : join(harness.app.getAppPath(), 'dsh')
     expect(harness.hosts[0]).toMatchObject({
-      node: process.execPath,
-      runtime: join(harness.app.getAppPath(), 'dsh'),
+      node: productionNode,
+      runtime: productionRuntime,
       profile: 'desktop-test-profile',
     })
     expect(harness.managerRuntimes[0]).toMatchObject({ profileResolution: 'runtime' })

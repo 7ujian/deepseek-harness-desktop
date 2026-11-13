@@ -75,6 +75,12 @@ export function createElectronBuilderConfig(
       '**/*.so.*',
       '**/spawn-helper',
       '**/@vscode/ripgrep/bin/rg',
+      // A packaged Linux app runs the dsh host under the bundled plain Node,
+      // which cannot read app.asar; keep the whole runtime on disk beside the
+      // native modules that are already unpacked above. asarUnpack patterns
+      // match the staged source path relative to this app directory, and the
+      // runtime is staged under .desktop-build/targets/<target>/dsh.
+      ...(resolvedPlatform === 'linux' ? ['**/dsh/**'] : []),
     ],
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },

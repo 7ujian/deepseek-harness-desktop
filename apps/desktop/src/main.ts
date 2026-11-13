@@ -70,14 +70,23 @@ interface RuntimeResources {
 
 function runtimeResources(): RuntimeResources {
   const development = !app.isPackaged
+  const bundledNode = join(process.resourcesPath, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+  // A packaged Linux app runs its dsh host (and pnpm) under the bundled plain
+  // Node instead of Electron-as-Node. The Electron binary links the system
+  // GTK, whose libgobject then satisfies sharp's native GLib calls while
+  // sharp's bundled libvips keeps its own statically linked GLib; the mixed
+  // type systems segfault the host on the first image decode. Plain Node
+  // loads no GTK, but it also cannot read app.asar, so Linux packaging keeps
+  // the dsh runtime on disk (asarUnpack "dsh/**").
+  const plainNodeHost = !development && process.platform === 'linux'
   const node = development
-    ? process.env.DSH_DESKTOP_NODE_BINARY
-      ?? join(process.resourcesPath, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
-    : process.execPath
+    ? process.env.DSH_DESKTOP_NODE_BINARY ?? bundledNode
+    : plainNodeHost ? bundledNode : process.execPath
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
     ?? join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs')
   const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
-    ?? (development ? join(process.resourcesPath, 'dsh') : join(app.getAppPath(), 'dsh'))
+    ?? (development ? join(process.resourcesPath, 'dsh')
+      : plainNodeHost ? join(process.resourcesPath, 'app.asar.unpacked', 'dsh') : join(app.getAppPath(), 'dsh'))
   return { node, pnpm, dsh, ...(development ? {} : { profileResolution: 'runtime' }) }
 }
 
